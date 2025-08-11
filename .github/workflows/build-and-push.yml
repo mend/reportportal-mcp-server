@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: 'Image tag to deploy (e.g. v1.2.3)'
+        description: 'Image tag to deploy (e.g. v1.2.3 or sha-abc123)'
         required: true
         type: string
 
@@ -12,32 +12,27 @@ permissions:
   contents: write
 
 jobs:
-  prepare:
+  deploy:
     runs-on: [mend-self-hosted, profile=sast-qa]
-    outputs:
-      TAG: ${{ steps.set-tag.outputs.TAG }}
-    steps:
-      - id: set-tag
-        run: echo "TAG=${{ github.event.inputs.image_tag }}" >> "$GITHUB_OUTPUT"
-
-  deploy-and-wait-for-sync:
-    needs: [prepare]
-    runs-on: [mend-self-hosted, profile=arch-small]
     env:
-      IMAGE_TAG: ${{ needs.prepare.outputs.TAG }}
+      IMAGE_TAG: ${{ github.event.inputs.image_tag }}
     steps:
-      - name: Check out Mend helm-charts Repo
-        uses: actions/checkout@v3
+      - name: Checkout mend/helm-charts
+        uses: actions/checkout@v4
         with:
           repository: mend/helm-charts
-          token: ${{ secrets.GH_TOKEN }}
           ref: main
           path: helm-charts-clone
+          token: ${{ secrets.GH_TOKEN }}  # must be defined and have write to mend/helm-charts
 
-      - name: Change image in helm chart values file
+      - name: Update image tag and push
         run: |
           cd ./helm-charts-clone/values/reportportal-mcp-server/infra
+
+          # Update tag
           sed -i 's/tag: .*/tag: '"${IMAGE_TAG}"'/g' ./values-infra-dev.yaml
+
+          # Commit and push
           git config --global user.name 'AutoRelease'
           git config --global user.email 'AutoRelease'
           git add .
